@@ -1,0 +1,137 @@
+#include <LiquidCrystal_I2C.h>
+#include <Servo.h>
+
+// --- I2C LCD Setup ---
+// The address is typically 0x27 or 0x3F. Try 0x27 first.
+LiquidCrystal_I2C lcd(0x27, 16, 2); 
+
+// --- Pin Definitions ---
+// Ultrasonic Sensor
+const int TRIG_PIN = 10;
+const int ECHO_PIN = 11;
+
+// Moisture Sensor (Analog Reading)
+const int MOISTURE_PIN = A0;
+
+// Single Servo Motor
+const int SINGLE_SERVO_PIN = 6; 
+
+// --- Thresholds and Parameters ---
+const int OPEN_DISTANCE_CM = 20;    // Distance to trigger detection (cm)
+const int MOISTURE_THRESHOLD = 500; // CALIBRATE THIS! (0-1023)
+
+// Servo Angles (CALIBRATE THESE ANGLES)
+const int CLOSED_ANGLE = 90;     // Center position
+const int OPEN_WET_ANGLE = 45;   // Angle to open the WET side
+const int OPEN_DRY_ANGLE = 135;  // Angle to open the DRY side
+const int OPEN_TIME_MS = 3000;   // Lid open duration (3 seconds)
+
+// --- Create Servo Object ---
+Servo singleLidServo;
+
+void setup() {
+  Serial.begin(9600);
+  
+  // Initialize LCD
+  lcd.init();      
+  lcd.backlight(); 
+  lcd.setCursor(0, 0); 
+  lcd.print("SMART WASTE SORTER");
+  lcd.setCursor(0, 1); 
+  lcd.print("Single Servo Mode");
+  delay(2000);
+  
+  // Ultrasonic Sensor Setup
+  pinMode(TRIG_PIN, OUTPUT);
+  pinMode(ECHO_PIN, INPUT);
+
+  // Servo Setup
+  singleLidServo.attach(SINGLE_SERVO_PIN);
+  singleLidServo.write(CLOSED_ANGLE);
+  delay(500);
+}
+
+void loop() {
+  long distance = measureDistance(); // Check for object
+
+  // --- 1. Object Detected ---
+  if (distance <= OPEN_DISTANCE_CM) {
+    lcd.clear();
+    lcd.setCursor(0, 0);
+    lcd.print("Object Detected!");
+    lcd.setCursor(0, 1);
+    lcd.print("ANALYZING WASTE...");
+    
+    // Pause briefly for user to position waste near the moisture sensor
+    delay(500); 
+
+    int moistureValue = analogRead(MOISTURE_PIN);
+    Serial.print("Moisture: "); Serial.println(moistureValue);
+    
+    // --- 2. Sorting Logic ---
+    if (moistureValue > MOISTURE_THRESHOLD) {
+      // --- WET WASTE Detected (High Moisture) ---
+      Serial.println("WET WASTE DETECTED.");
+      
+      singleLidServo.write(OPEN_WET_ANGLE); // Open the WET side
+      
+      lcd.clear();
+      lcd.setCursor(3, 0);
+      lcd.print("** WET WASTE **");
+      lcd.setCursor(0, 1);
+      lcd.print("Throw Now...");
+      
+    } else {
+      // --- DRY WASTE Detected (Low Moisture) ---
+      Serial.println("DRY WASTE DETECTED.");
+      
+      singleLidServo.write(OPEN_DRY_ANGLE); // Open the DRY side
+      
+      lcd.clear();
+      lcd.setCursor(3, 0);
+      lcd.print("** DRY WASTE **");
+      lcd.setCursor(0, 1);
+      lcd.print("Throw Now...");
+    }
+    
+    // --- 3. Close Lid ---
+    delay(OPEN_TIME_MS); // Keep the selected lid open for disposal
+    
+    singleLidServo.write(CLOSED_ANGLE); // Close the lid (move to center)
+
+    // Display "Closing" message
+    lcd.clear();
+    lcd.setCursor(0, 0);
+    lcd.print("THANK YOU!");
+    lcd.setCursor(0, 1);
+    lcd.print("Lid Closed.");
+    delay(1500);
+    
+    // Reset to "Ready" state
+    lcd.clear();
+    lcd.setCursor(0, 0);
+    lcd.print(" SMART WASTE SORTER");
+    lcd.setCursor(0, 1);
+    lcd.print("   Ready to Use   ");
+
+    delay(500); // Short delay before allowing next detection
+
+  } else {
+    // No object detected 
+    delay(50); 
+  }
+}
+
+// --- Function to measure distance using Ultrasonic Sensor ---
+long measureDistance() {
+  digitalWrite(TRIG_PIN, LOW);
+  delayMicroseconds(2);
+  digitalWrite(TRIG_PIN, HIGH);
+  delayMicroseconds(10);
+  digitalWrite(TRIG_PIN, LOW);
+  
+  long duration = pulseIn(ECHO_PIN, HIGH);
+  long distance = duration / 29 / 2;
+  
+  return distance;
+}
